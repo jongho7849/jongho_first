@@ -1,347 +1,598 @@
 import streamlit as st
 
-# ==============================
-#  기본 추천 로직 함수들
-# ==============================
+# ======================================
+# 1. 기본 데이터 정의
+# ======================================
 
-def detect_cluster(middle_school: str) -> str:
-    """중학교 이름을 기반으로 권역 클러스터 분류"""
-    if not middle_school:
-        return ""
+# 1) 창원 의창구 / 성산구 중학교 목록
+UICHANG_MIDDLES = [
+    "도계중학교", "명곡여자중학교", "명서중학교", "봉곡중학교", "봉림중학교",
+    "신월중학교", "창덕중학교", "창북중학교", "창원대산중학교",
+    "창원동중학교", "창원여자중학교", "창원중학교",
+    "토월중학교", "팔룡중학교",
+]
 
+SEONGSAN_MIDDLES = [
+    "경원중학교", "남산중학교", "대방중학교", "반림중학교",
+    "반송여자중학교", "반송중학교", "사파중학교", "삼정자중학교",
+    "안남중학교", "안민중학교", "양곡중학교", "웅남중학교",
+    "창원남중학교", "창원상남중학교", "창원중앙중학교",
+]
+
+ALL_MIDDLES = sorted(list(set(UICHANG_MIDDLES + SEONGSAN_MIDDLES)))
+
+
+def detect_zone_by_middle(middle_school: str) -> str:
+    """중학교 이름으로 의창/성산 권역 판별"""
     ms = middle_school.strip()
-
-    # 북측권: 창북중 / 북면 / 동읍 / 감계
-    north_keywords = ["창북중", "창북", "북면", "동읍", "감계", "감계중"]
-    if any(k in ms for k in north_keywords):
-        return "north"
-
-    # 마산 핵심권
-    masan_keywords = ["양덕", "석전", "합성", "회원", "내서", "월영", "자산", "오동"]
-    if any(k in ms for k in masan_keywords):
-        return "masan_core"
-
-    # 의창 핵심권
-    uichang_keywords = ["용지", "팔용", "명서", "창원중"]
-    if any(k in ms for k in uichang_keywords):
-        return "uichang_core"
-
-    # 성산 핵심권
-    seongsan_keywords = ["상남", "사파", "반송", "성주", "용호"]
-    if any(k in ms for k in seongsan_keywords):
-        return "seongsan_core"
-
-    # 진해
-    jinhae_keywords = ["풍호", "여좌", "병암", "진해"]
-    if any(k in ms for k in jinhae_keywords):
-        return "jinhae_core"
-
+    if ms in UICHANG_MIDDLES:
+        return "의창"
+    if ms in SEONGSAN_MIDDLES:
+        return "성산"
     return ""
 
 
-def base_first_choice(s_type: str, score: float, zone: str) -> str:
-    """중학교 클러스터가 없을 때 사용하는 1지망 기본 로직"""
-    if s_type == "탐구형":
-        if score >= 90:
-            if zone == "의창":
-                return "창원중앙고"
-            elif zone == "성산":
-                return "창원남고"
-            elif zone == "마산":
-                return "마산고"
-            elif zone == "진해":
-                return "진해고"
-        elif score >= 85:
-            if zone == "의창":
-                return "창원중앙고"
-            elif zone == "성산":
-                return "창원남고"
-            elif zone == "마산":
-                return "마산고"
-            elif zone == "진해":
-                return "진해고"
-        if zone in ["의창", "성산"]:
-            return "사파고"
-        elif zone == "마산":
-            return "마산고"
-        elif zone == "진해":
-            return "진해고"
+# 2) 고등학교 기본 정보 + 특징/장단점/학점제/학종/세특
 
-    elif s_type == "안정형":
-        if zone in ["의창", "성산"]:
-            return "사파고"
-        elif zone == "마산":
-            return "문성고"
-        elif zone == "진해":
-            return "진해고"
+SCHOOL_DATA = {
+    # ---------------- 남학교 ----------------
+    "경상고등학교": {
+        "gender": "남",
+        "zone": "의창",
+        "feature": "전통 있는 남학교로, 중위~중상위권 학생 비율이 높은 일반고입니다.",
+        "pros": "생활지도와 규율이 비교적 체계적이며, 중위권 학생이 기본기를 다지기에 적합합니다.",
+        "cons": "최상위권 프로그램이나 학종 특화 프로그램은 상대적으로 약한 편입니다.",
+        "credit": "기초·기본 과목 중심의 학점제 운영으로, 선택과목 폭은 무난한 수준입니다.",
+        "hakjong": "수능·정시 위주 학생에게 안정적인 학교이며, 학종으로 상위권 대학을 노리는 구조는 아닙니다.",
+        "seteuk": "성실·참여 중심의 세특이 많고, 활동 확인 위주의 기록이 주를 이룹니다.",
+    },
+    "창원경일고등학교": {
+        "gender": "남",
+        "zone": "의창",
+        "feature": "의창권에 위치한 남학교로, 비교적 조용하고 안정적인 학습 분위기를 가진 학교입니다.",
+        "pros": "내신 경쟁이 최상위권 학교보다는 완만하여, 중위권 학생이 부담을 줄이고 관리하기 좋습니다.",
+        "cons": "선택과목 수나 비교과 기회 측면에서 상위권 학교 대비 다양성이 부족할 수 있습니다.",
+        "credit": "기초 교과 중심으로 편성되어 있으며, 심화·특색 과목은 제한적인 편입니다.",
+        "hakjong": "수능·정시 비중이 크고, 학종으로 수도권 상위권을 노리는 체제는 아닙니다.",
+        "seteuk": "수업 참여도와 과제 수행 여부를 중심으로 간단하게 기록되는 경우가 많습니다.",
+    },
+    "창원고등학교": {
+        "gender": "남",
+        "zone": "의창",
+        "feature": "중상위권 남학생들이 많이 진학하는 일반고로, 학교 분위기가 안정적인 편입니다.",
+        "pros": "경상국립대·부산대 등 국립대 진학 실적이 꾸준하며, 내신 난이도가 극단적으로 높지 않습니다.",
+        "cons": "상위권 특화 프로그램 측면에서는 남고·중앙고에 비해 상대적 열세입니다.",
+        "credit": "이과·문과 기본 과목이 고르게 개설되어 있으며, 심화 선택은 다소 제한적입니다.",
+        "hakjong": "학종·교과를 병행할 수 있으나, 대학이 선호하는 대표 학종 강학교 이미지까지는 아닙니다.",
+        "seteuk": "학습 태도와 과제를 중심으로 기록되며, 심화 탐구는 학생 주도성이 있을 때 강화됩니다.",
+    },
+    "창원남고등학교": {
+        "gender": "남",
+        "zone": "성산",
+        "feature": "성산구 대표 상위권 남학교로, 학업 분위기가 강하고 수능 준비 문화가 정착된 학교입니다.",
+        "pros": "이과·의치한·공대 진학을 목표로 하는 상위권 학생에게 매우 유리한 환경입니다.",
+        "cons": "내신 경쟁이 매우 치열하여, 상위권이 아닌 학생에게는 부담이 클 수 있습니다.",
+        "credit": "수학·과학 심화 과목과 프로젝트형 수업 비율이 높고, 이과 선택과목 폭이 넓습니다.",
+        "hakjong": "학종·교과·정시 모두 활용 가능한 학교로, 학생부의 밀도와 비교과 수준이 높습니다.",
+        "seteuk": "과제 탐구, 실험·분석, 발표 활동 등이 세특에 구체적으로 기록되는 편입니다.",
+    },
+    "창원중앙고등학교": {
+        "gender": "남",
+        "zone": "의창",
+        "feature": "의창권 상위권 남학교로, 팔용·명서·용지권 중학교 학생 선호도가 높은 학교입니다.",
+        "pros": "서성한·중경외시 등 수도권 상위권 진학에 강점을 가지며, 종합·교과를 모두 노릴 수 있습니다.",
+        "cons": "내신 경쟁이 치열하여, 안정형·중위권 학생에게는 부담이 될 수 있습니다.",
+        "credit": "문·이과 모두 선택과목 구성이 탄탄하며, 진로 맞춤형 선택이 가능한 편입니다.",
+        "hakjong": "비교과와 탐구활동이 잘 설계되어 있어 학종 경쟁력이 우수한 학교입니다.",
+        "seteuk": "학습 과정·문제 해결 과정 중심의 서술형 세특이 강점입니다.",
+    },
 
-    elif s_type == "도전형":
-        if zone == "의창":
-            return "창원중앙고"
-        elif zone == "성산":
-            return "창원남고"
-        elif zone == "마산":
-            return "마산고"
-        elif zone == "진해":
-            return "진해고"
+    # ---------------- 여학교 ----------------
+    "창원명지여자고등학교": {
+        "gender": "여",
+        "zone": "성산",
+        "feature": "창원 여고 중 학종 경쟁력이 가장 높은 학교 중 하나로 평가됩니다.",
+        "pros": "선택과목 폭이 넓고, 프로젝트형 수업과 발표·탐구 활동이 활발합니다.",
+        "cons": "내신 경쟁이 강한 편이라 상위권 유지가 쉽지 않을 수 있습니다.",
+        "credit": "인문·사회 계열 과목이 다양하며, 이과 심화 과목도 일정 수준 이상 개설됩니다.",
+        "hakjong": "여대 및 수도권 중상위권 대학 학종 지원에 적합한 구조를 갖추고 있습니다.",
+        "seteuk": "토론·발표·탐구 프로젝트 내용이 구체적으로 기록되는 편입니다.",
+    },
+    "창원중앙여자고등학교": {
+        "gender": "여",
+        "zone": "의창",
+        "feature": "명서·팔용·용지권 여학생들의 선호도가 높은 여고입니다.",
+        "pros": "학종과 교과 성적을 함께 관리하기 좋은 구조이며, 생활기록부 흐름이 안정적입니다.",
+        "cons": "내신 경쟁이 다소 치열해 중위권 학생은 성적 관리에 부담을 느낄 수 있습니다.",
+        "credit": "인문사회 계열 과목 선택 폭이 넓고, 자연계 과목도 기본적으로 개설되어 있습니다.",
+        "hakjong": "수도권 중상위권 대학 학종 지원에 무난하며, 비교과 기회도 적절합니다.",
+        "seteuk": "학습 태도·참여도와 함께 소규모 탐구과제가 세특에 잘 반영되는 편입니다.",
+    },
+    "창원여자고등학교": {
+        "gender": "여",
+        "zone": "의창",
+        "feature": "의창·성산권 전반에서 고르게 진학하는 중상위권 여고입니다.",
+        "pros": "내신 난이도가 극단적으로 높지 않아 중상위권 학생이 안정적으로 관리하기 유리합니다.",
+        "cons": "최상위권 대학을 목표로 하는 경우, 추가적인 비교과 설계가 필요합니다.",
+        "credit": "문과 중심 선택이 강점이며, 자연계 심화는 일부 제한적입니다.",
+        "hakjong": "국공립대·수도권 중위권 대학 학종·교과 전형에 적합한 수준입니다.",
+        "seteuk": "기초 개념 이해와 과제 수행 중심으로, 간단한 탐구 내용을 함께 기록하는 형태입니다.",
+    },
+    "창원성민여자고등학교": {
+        "gender": "여",
+        "zone": "의창",
+        "feature": "성실형 학생이 꾸준히 공부하기에 적합한 여고입니다.",
+        "pros": "내신 경쟁이 상대적으로 과도하지 않아 학업 스트레스를 조절하기 좋습니다.",
+        "cons": "선택과목 폭과 비교과 프로그램 수는 상위권 여고에 비해 적은 편입니다.",
+        "credit": "기초·기본 과목 위주 편성으로, 학력 기초를 다지기 좋습니다.",
+        "hakjong": "학종보다는 교과·정시 비중이 큰 편이며, 성실형 학생에게 유리합니다.",
+        "seteuk": "성실성·참여도를 중심으로 기록되며, 탐구 심화의 밀도는 다소 낮을 수 있습니다.",
+    },
+    "창원경일여자고등학교": {
+        "gender": "여",
+        "zone": "의창",
+        "feature": "중위권 여학생 중심으로 배정되는 학교로, 비교적 조용한 학교 분위기입니다.",
+        "pros": "내신 관리가 상위권 여고보다 수월한 편입니다.",
+        "cons": "학종 경쟁력·선택과목 폭은 상대적으로 제한적입니다.",
+        "credit": "기초 위주 교과 편성이며, 심화 과목은 일부에 한정됩니다.",
+        "hakjong": "지방 4년제 및 전문대 중심 진학 구조입니다.",
+        "seteuk": "기본적인 수업 참여 기록 중심의 세특이 많습니다.",
+    },
 
-    return ""
-
-
-def base_second_choice(s_type: str, score: float, zone: str) -> str:
-    """2지망 기본 로직"""
-    if s_type == "탐구형":
-        if zone == "의창":
-            return "창원남고"
-        elif zone == "성산":
-            return "창원중앙고"
-        elif zone == "마산":
-            return "창원중앙고"
-        elif zone == "진해":
-            return "진해여고"
-
-    elif s_type == "안정형":
-        if zone in ["의창", "성산"]:
-            return "문성고"
-        elif zone == "마산":
-            return "사파고"
-        elif zone == "진해":
-            return "진해여고"
-
-    elif s_type == "도전형":
-        if zone == "의창":
-            return "창원남고"
-        elif zone == "성산":
-            return "창원중앙고"
-        elif zone == "마산":
-            return "창원중앙고"
-        elif zone == "진해":
-            return "진해여고"
-
-    return ""
-
-
-def adjust_for_gender(rec_list, gender: str):
-    """성별에 따른 남녀 전용학교 필터링"""
-    if gender == "무관":
-        return rec_list[:5]
-
-    boys_only = ["창원남고", "마산고", "진해고", "창원중앙고"]
-    girls_only = ["명지여고", "창원여고", "마산여고", "진해여고"]
-
-    if gender == "남":
-        filtered = [r for r in rec_list if r not in girls_only]
-    elif gender == "여":
-        filtered = [r for r in rec_list if r not in boys_only]
-    else:
-        filtered = rec_list
-
-    if not filtered:
-        filtered = rec_list
-
-    return filtered[:5]
-
-
-# ------------------------------
-#  학교별 상세 특징
-# ------------------------------
-
-SCHOOL_PROFILES = {
-    "창원중앙고": [
-        "의창구 상위권 남자 일반고입니다.",
-        "내신 경쟁이 다소 치열한 편입니다.",
-        "팔용·용지권에서 선호도가 높습니다."
-    ],
-    "창원남고": [
-        "성산구 대표 남자 일반고입니다.",
-        "상남·사파권 학생의 진학 비율이 높습니다."
-    ],
-    "마산고": [
-        "마산권 상위 남자 일반고입니다.",
-        "양덕·회원·내서권 학생 비율이 높습니다."
-    ],
-    "명지여고": [
-        "성산·의창권 상위 여고입니다.",
-        "내신·비교과 균형이 잘 잡혀 있습니다."
-    ],
-    "창원여고": [
-        "창원 전역에서 지원하는 여고입니다.",
-        "중상위권 여학생에게 안정적입니다."
-    ],
-    "마산여고": [
-        "마산 대표 여고입니다.",
-        "마산권 조합에서 자주 선택됩니다."
-    ],
-    "진해고": [
-        "진해 대표 남자 일반고입니다.",
-        "통학이 용이해 지역 선호도가 높습니다."
-    ],
-    "진해여고": [
-        "진해권 대표 여고입니다.",
-        "내신 관리가 비교적 안정적입니다."
-    ],
-    "사파고": [
-        "의창·성산 경계에 위치한 공학 일반고입니다.",
-        "중상위권 학생에게 안정적인 선택입니다."
-    ],
-    "문성고": [
-        "마산·의창 학생 모두 선택 가능한 공학 일반고입니다.",
-        "내신 부담이 상대적으로 낮은 편입니다."
-    ],
-    "신월고": [
-        "안정적인 학교생활을 원하는 학생에게 적합한 일반고입니다.",
-        "중위권 학생의 안정 지망입니다."
-    ],
-    "북면고": [
-        "북면·동읍·감계 학생에게 통학 접근성이 가장 좋습니다.",
-        "북측권 학생의 대표 지망입니다."
-    ],
+    # ---------------- 공학 ----------------
+    "창원문성고등학교": {
+        "gender": "공학",
+        "zone": "의창",
+        "feature": "의창·성산권 모두에서 지원이 많은 공학 상위권 일반고입니다.",
+        "pros": "문·이과 선택과목 폭이 넓고, 탐구·프로젝트형 수업이 잘 운영됩니다.",
+        "cons": "내신 경쟁이 꽤 치열하여, 상위권이 아닌 학생은 성적 관리가 쉽지 않을 수 있습니다.",
+        "credit": "이과·문과 모두 심화 선택과목이 고르게 개설되어 있습니다.",
+        "hakjong": "공학 학교 중 학종 경쟁력이 가장 높은 축에 속합니다.",
+        "seteuk": "학생 개별 탐구·발표·프로젝트가 세특에 상세히 반영되는 편입니다.",
+    },
+    "창원명곡고등학교": {
+        "gender": "공학",
+        "zone": "성산",
+        "feature": "성산구 대표 공학 상위권 일반고입니다.",
+        "pros": "인문·사회 계열에 강점이 있고, 이과 심화 과목도 일정 수준 이상 유지됩니다.",
+        "cons": "상위권 학생 비율이 높아 내신 성적 경쟁이 빡빡할 수 있습니다.",
+        "credit": "사회·국어·영어 심화 과목과 과학 실험·융합 과목이 함께 개설됩니다.",
+        "hakjong": "탐구·프로젝트 중심 활동이 많아 학종 대비에 유리합니다.",
+        "seteuk": "인문·사회 탐구 세특의 깊이가 좋은 편입니다.",
+    },
+    "창원용호고등학교": {
+        "gender": "공학",
+        "zone": "성산",
+        "feature": "상남·사파·성주권 학생들이 많이 진학하는 공학 일반고입니다.",
+        "pros": "문과 학생에게 특히 유리하며, 국어·영어 중심 수업이 강점입니다.",
+        "cons": "이과 심화 선택과목 수는 상위권 자연계 특화 학교보다 적을 수 있습니다.",
+        "credit": "인문·사회 계열 선택과목이 다양하며, 고급 국어·영어 과목 운영 비중이 큽니다.",
+        "hakjong": "여학생 비율이 높고, 학종 준비에 적합한 활동 구조를 갖추고 있습니다.",
+        "seteuk": "발표·토론형 수업 내용을 세특에 잘 반영하는 편입니다.",
+    },
+    "창원사파고등학교": {
+        "gender": "공학",
+        "zone": "성산",
+        "feature": "의창·성산 경계에서 통학성이 좋고, 내신 관리가 비교적 안정적인 공학 일반고입니다.",
+        "pros": "중상위~중위권 학생에게 안전한 내신 관리 환경을 제공합니다.",
+        "cons": "최상위권 대학 진학을 위한 강한 드라이브보다는 '안정'에 초점이 맞춰진 편입니다.",
+        "credit": "기본 교과 위주이지만, 학교 여건에 따라 다양한 선택과목을 운영하려는 편입니다.",
+        "hakjong": "학종·교과 모두 무난한 수준으로, 학종 특화 이미지는 아닙니다.",
+        "seteuk": "기초 개념 이해와 과제 수행 기록 중심으로 구성됩니다.",
+    },
+    "창원봉림고등학교": {
+        "gender": "공학",
+        "zone": "성산",
+        "feature": "성산권에서 중상위권 학생들이 많이 선택하는 공학 일반고입니다.",
+        "pros": "학교 분위기가 안정적이고, 내신과 비교과를 함께 관리하기 무난합니다.",
+        "cons": "상위권 프로그램의 강도나 밀도는 최상위 학교에 비해 약할 수 있습니다.",
+        "credit": "문·이과 기본 과목이 고르게 개설됩니다.",
+        "hakjong": "학종·교과 지원 모두 무난한 편이며, 중상위권 학생에게 적합합니다.",
+        "seteuk": "과정 중심 기록과 간단한 탐구 내용이 함께 기재되는 편입니다.",
+    },
+    "창원남산고등학교": {
+        "gender": "공학",
+        "zone": "성산",
+        "feature": "성산권에서 중상위권 학생 비율이 높은 공학 일반고입니다.",
+        "pros": "수능형·학종형 학생 모두 무난하게 준비할 수 있는 구조입니다.",
+        "cons": "학교 브랜드 인지도는 최상위권 고교보다는 한 단계 낮습니다.",
+        "credit": "이과 중심 선택이 가능한 편이며, 문과 선택도 기본은 갖추고 있습니다.",
+        "hakjong": "학종 대비는 보통 수준이며, 교과·정시 비중이 상대적으로 큽니다.",
+        "seteuk": "성실·참여 중심으로 기록되나, 학생 주도 프로젝트가 있을 경우 내용이 강화됩니다.",
+    },
+    "창원대암고등학교": {
+        "gender": "공학",
+        "zone": "의창",
+        "feature": "의창권에서 중위권 학생들이 주로 진학하는 공학 일반고입니다.",
+        "pros": "내신 경쟁의 압박이 크지 않아 기본기를 쌓기에 적합합니다.",
+        "cons": "선택과목 폭과 비교과 기회는 상위권 공학고 대비 적을 수 있습니다.",
+        "credit": "기초·기본 과목 중심으로 편성되어 있습니다.",
+        "hakjong": "학종보다는 교과·정시 비중이 큰 구조입니다.",
+        "seteuk": "기본적인 참여도와 과제 수행 기록 중심의 세특이 많습니다.",
+    },
+    "창원상북고등학교": {
+        "gender": "공학",
+        "zone": "의창",
+        "feature": "중위권 이하 학생들이 안정적으로 진학하는 공학 일반고입니다.",
+        "pros": "내신 커트라인이 비교적 낮아, 성적을 다시 정비하기에 유리합니다.",
+        "cons": "상위권 프로그램·학종 경쟁력 면에서는 한계가 있습니다.",
+        "credit": "기본 교과 위주로 학점제가 운영됩니다.",
+        "hakjong": "교과·정시 중심의 진학 구조입니다.",
+        "seteuk": "성실성·기본기 위주로 세특이 작성되는 학교입니다.",
+    },
+    "창원토월고등학교": {
+        "gender": "공학",
+        "zone": "의창",
+        "feature": "의창권에서 하위~중위권 학생 중심의 공학 일반고입니다.",
+        "pros": "내신 경쟁 강도가 비교적 낮아 부담을 줄일 수 있습니다.",
+        "cons": "상위권 대학 진학을 위한 환경·프로그램은 제한적입니다.",
+        "credit": "기본 과목 위주의 학점제 운영입니다.",
+        "hakjong": "주로 지방 4년제·전문대 중심의 진학 구조입니다.",
+        "seteuk": "기초 수업 참여와 태도 중심으로 기록되는 편입니다.",
+    },
+    "팔룡고등학교": {
+        "gender": "공학",
+        "zone": "의창",
+        "feature": "팔룡·명서권 중위권 학생들이 많이 선택하는 공학 일반고입니다.",
+        "pros": "통학이 편리하고, 내신 경쟁 강도도 비교적 안정적입니다.",
+        "cons": "상위권 학종·심화 활동 측면에서는 상대적으로 약합니다.",
+        "credit": "기초 중심 과목 위주 편성입니다.",
+        "hakjong": "교과·정시 중심 진학에 적합합니다.",
+        "seteuk": "성실성 위주 기록이 많고, 탐구 심화는 학생 주도에 따라 달라집니다.",
+    },
+    "명서고등학교": {
+        "gender": "공학",
+        "zone": "의창",
+        "feature": "의창권에서 하위~중위권 학생이 많이 선택하는 공학 일반고입니다.",
+        "pros": "내신이 많이 밀린 학생이 다시 정비하기에 비교적 유리합니다.",
+        "cons": "상위권 대학 대비를 위한 학종·비교과 환경은 제한적입니다.",
+        "credit": "기초 과목 위주로 구성되어 있습니다.",
+        "hakjong": "교과·정시 중심, 일부 전문대 진학 비중이 높습니다.",
+        "seteuk": "기본 수업 태도와 과제를 중심으로 간단히 기록됩니다.",
+    },
 }
 
-
-def school_profile(school: str):
-    if school in SCHOOL_PROFILES:
-        return SCHOOL_PROFILES[school]
-    return ["학교 특징 정보가 준비되어 있습니다."]
+# 남학교 / 여학교 목록 (성별 필터에 사용)
+BOYS_ONLY = [name for name, v in SCHOOL_DATA.items() if v["gender"] == "남"]
+GIRLS_ONLY = [name for name, v in SCHOOL_DATA.items() if v["gender"] == "여"]
 
 
-def school_reason_brief(school: str) -> str:
-    top_schools = [
-        "창원중앙고", "창원남고", "마산고",
-        "명지여고", "창원여고", "마산여고",
-        "진해고", "진해여고"
-    ]
-    balance_schools = ["사파고", "문성고", "북면고"]
-    safe_schools = ["신월고"]
+# ======================================
+# 2. 유틸 함수 (점수 구간 → 숫자)
+# ======================================
 
-    if school in top_schools:
-        return "상위권 도전 지망입니다."
-    if school in balance_schools:
-        return "성적과 통학을 균형 있게 고려한 안정 지망입니다."
-    if school in safe_schools:
-        return "안정적인 내신 관리가 가능한 안전 지망입니다."
-    return "해당 권역에서 적합한 일반고입니다."
-
-
-def recommend_schools(name, middle_school, s_type, score, zone, gender):
-
-    cluster = detect_cluster(middle_school)
-
-    # 1지망
-    if cluster == "north":
-        rec1 = "북면고"
-    elif cluster == "masan_core":
-        rec1 = "마산고"
-    elif cluster == "uichang_core":
-        rec1 = "창원중앙고"
-    elif cluster == "seongsan_core":
-        rec1 = "창원남고"
-    elif cluster == "jinhae_core":
-        rec1 = "진해고"
-    else:
-        rec1 = base_first_choice(s_type, score, zone)
-
-    # 2지망
-    if cluster == "north":
-        rec2 = "문성고"
-    elif cluster == "masan_core":
-        rec2 = "마산여고"
-    elif cluster == "uichang_core":
-        rec2 = "사파고"
-    elif cluster == "seongsan_core":
-        rec2 = "명지여고"
-    elif cluster == "jinhae_core":
-        rec2 = "진해여고"
-    else:
-        rec2 = base_second_choice(s_type, score, zone)
-
-    # 3~5지망
-    if zone in ["의창", "성산"]:
-        rec3 = "사파고"
-        rec4 = "문성고"
-        rec5 = "신월고"
-    elif zone == "마산":
-        rec3 = "문성고"
-        rec4 = "사파고"
-        rec5 = "마산여고"
-    elif zone == "진해":
-        rec3 = "진해고"
-        rec4 = "진해여고"
-        rec5 = "진해고"
-
-    # 북측권일 경우: 대산고 없이 단순 조합
-    if cluster == "north":
-        rec3 = "사파고"
-        rec4 = "문성고"
-        rec5 = "신월고"
-
-    # 중복 제거
-    rec_list = []
-    for r in [rec1, rec2, rec3, rec4, rec5]:
-        if r not in rec_list:
-            rec_list.append(r)
-
-    # 성별 필터 적용
-    rec_list = adjust_for_gender(rec_list, gender)
-
-    # 설명 생성
-    brief = [school_reason_brief(x) for x in rec_list]
-    profs = [school_profile(x) for x in rec_list]
-
-    cluster_map = {
-        "north": "북면·동읍·감계·창북중 등 북측권",
-        "masan_core": "마산 핵심권",
-        "uichang_core": "의창 핵심권",
-        "seongsan_core": "성산 핵심권",
-        "jinhae_core": "진해권",
-        "": "일반권"
+def convert_score_range_to_numeric(score_range: str) -> float:
+    mapping = {
+        "95 이상": 95,
+        "90 이상": 90,
+        "85 이상": 85,
+        "80 이상": 80,
+        "75 이상": 75,
+        "70 이상": 70,
+        "65 이상": 65,
+        "60 이하": 60,
     }
-
-    summary = (
-        f"- 중학교: **{middle_school}** (권역: {cluster_map[cluster]})\n"
-        f"- 통학구역: **{zone}** / 성향: **{s_type}** / 내신: **{score}점**\n"
-        + ("- 성별 필터 적용됨\n" if gender != "무관" else "")
-        + "- 지망 조합은 실제 진학 패턴과 통학 조건을 기준으로 구성했습니다."
-    )
-
-    return rec_list, brief, profs, summary
+    return mapping.get(score_range, 80.0)
 
 
-# ==============================
-#  Streamlit UI
-# ==============================
+# ======================================
+# 3. 추천 로직
+# ======================================
+
+def rank_schools_by_profile(zone: str, track: str):
+    """
+    권역(zone: 의창/성산) + 성향(track: 인문계열/자연계열/혼합형)에 따른 기본 랭킹 리스트 반환
+    상위쪽일수록 우선 추천
+    """
+    if zone == "의창":
+        if track == "자연계열":
+            base = [
+                "창원중앙고등학교",
+                "창원남고등학교",   # 성산이지만 자연계 최상위 학교로 포함
+                "창원고등학교",
+                "창원문성고등학교",
+                "경상고등학교",
+                "창원명곡고등학교",
+                "창원남산고등학교",
+                "창원명지여자고등학교",
+                "창원중앙여자고등학교",
+                "창원여자고등학교",
+                "창원사파고등학교",
+                "창원봉림고등학교",
+                "창원용호고등학교",
+                "창원대암고등학교",
+                "창원상북고등학교",
+                "팔룡고등학교",
+                "명서고등학교",
+                "창원성민여자고등학교",
+                "창원경일고등학교",
+                "창원경일여자고등학교",
+                "창원토월고등학교",
+            ]
+        elif track == "인문계열":
+            base = [
+                "창원명지여자고등학교",
+                "창원중앙여자고등학교",
+                "창원문성고등학교",
+                "창원명곡고등학교",
+                "창원용호고등학교",
+                "창원여자고등학교",
+                "창원남고등학교",
+                "창원중앙고등학교",
+                "창원사파고등학교",
+                "창원봉림고등학교",
+                "경상고등학교",
+                "창원고등학교",
+                "창원남산고등학교",
+                "창원대암고등학교",
+                "창원상북고등학교",
+                "팔룡고등학교",
+                "명서고등학교",
+                "창원성민여자고등학교",
+                "창원경일여자고등학교",
+                "창원경일고등학교",
+                "창원토월고등학교",
+            ]
+        else:  # 혼합형
+            base = [
+                "창원문성고등학교",
+                "창원명곡고등학교",
+                "창원중앙고등학교",
+                "창원남고등학교",
+                "창원명지여자고등학교",
+                "창원중앙여자고등학교",
+                "창원여자고등학교",
+                "창원사파고등학교",
+                "창원봉림고등학교",
+                "창원용호고등학교",
+                "창원고등학교",
+                "경상고등학교",
+                "창원남산고등학교",
+                "창원대암고등학교",
+                "창원상북고등학교",
+                "팔룡고등학교",
+                "명서고등학교",
+                "창원성민여자고등학교",
+                "창원경일여자고등학교",
+                "창원경일고등학교",
+                "창원토월고등학교",
+            ]
+    else:  # 성산
+        if track == "자연계열":
+            base = [
+                "창원남고등학교",
+                "창원중앙고등학교",
+                "창원문성고등학교",
+                "창원명곡고등학교",
+                "창원고등학교",
+                "경상고등학교",
+                "창원남산고등학교",
+                "창원명지여자고등학교",
+                "창원용호고등학교",
+                "창원사파고등학교",
+                "창원봉림고등학교",
+                "창원중앙여자고등학교",
+                "창원여자고등학교",
+                "창원대암고등학교",
+                "창원상북고등학교",
+                "팔룡고등학교",
+                "명서고등학교",
+                "창원성민여자고등학교",
+                "창원경일고등학교",
+                "창원경일여자고등학교",
+                "창원토월고등학교",
+            ]
+        elif track == "인문계열":
+            base = [
+                "창원명지여자고등학교",
+                "창원명곡고등학교",
+                "창원용호고등학교",
+                "창원중앙여자고등학교",
+                "창원문성고등학교",
+                "창원남고등학교",
+                "창원중앙고등학교",
+                "창원여자고등학교",
+                "창원사파고등학교",
+                "창원봉림고등학교",
+                "창원남산고등학교",
+                "창원고등학교",
+                "경상고등학교",
+                "창원대암고등학교",
+                "창원상북고등학교",
+                "팔룡고등학교",
+                "명서고등학교",
+                "창원성민여자고등학교",
+                "창원경일여자고등학교",
+                "창원경일고등학교",
+                "창원토월고등학교",
+            ]
+        else:  # 혼합형
+            base = [
+                "창원문성고등학교",
+                "창원명곡고등학교",
+                "창원남고등학교",
+                "창원중앙고등학교",
+                "창원명지여자고등학교",
+                "창원용호고등학교",
+                "창원중앙여자고등학교",
+                "창원사파고등학교",
+                "창원봉림고등학교",
+                "창원여자고등학교",
+                "창원남산고등학교",
+                "창원고등학교",
+                "경상고등학교",
+                "창원대암고등학교",
+                "창원상북고등학교",
+                "팔룡고등학교",
+                "명서고등학교",
+                "창원성민여자고등학교",
+                "창원경일여자고등학교",
+                "창원경일고등학교",
+                "창원토월고등학교",
+            ]
+    return base
+
+
+def apply_gender_filter(school_list, gender: str):
+    """성별에 따라 남학교/여학교 필터링"""
+    if gender == "무관":
+        return school_list
+
+    filtered = []
+    for s in school_list:
+        if gender == "남":
+            if s in GIRLS_ONLY:
+                continue
+        elif gender == "여":
+            if s in BOYS_ONLY:
+                continue
+        filtered.append(s)
+
+    return filtered if filtered else school_list
+
+
+def recommend_schools(name: str,
+                      middle_school: str,
+                      score: float,
+                      track: str,
+                      gender: str,
+                      zone: str):
+
+    # 1) 중학교 기준으로 권역 자동 판정 (입력한 통학구역이 '자동 판정'이면 중학교 기준 사용)
+    auto_zone = detect_zone_by_middle(middle_school)
+    if zone == "자동 판정":
+        final_zone = auto_zone if auto_zone else "의창"
+    else:
+        final_zone = zone
+
+    # 2) 기본 랭킹 불러오기
+    base_list = rank_schools_by_profile(final_zone, track)
+
+    # 3) 성별 필터 적용
+    filtered = apply_gender_filter(base_list, gender)
+
+    # 4) 내신에 따른 조정
+    if score < 70:
+        # 60 이하 및 65 이상~70 미만: 하위권 → 안정·하위권 학교 앞으로
+        tail = filtered[-8:]
+        head = filtered[:-8]
+        final_list = tail + head
+    elif score < 80:
+        # 70~79: 중하위권 → 안정 학교 비중 상승
+        final_list = filtered[5:] + filtered[:5]
+    elif score < 90:
+        # 80~89: 중위~중상위 → 상위/안정 섞어 배치
+        final_list = filtered[3:] + filtered[:3]
+    else:
+        # 90 이상: 상위권 → 상위 학교 유지
+        final_list = filtered
+
+    # 최종 5개 추천
+    top5 = []
+    for s in final_list:
+        if s not in top5 and s in SCHOOL_DATA:
+            top5.append(s)
+        if len(top5) == 5:
+            break
+
+    # 요약 설명 구성
+    summary_lines = []
+    summary_lines.append(f"- 학생: **{name}**")
+    summary_lines.append(f"- 중학교: **{middle_school}**")
+    summary_lines.append(f"- 통학구역: **{final_zone}**")
+    summary_lines.append(f"- 성향: **{track}**, 내신 구간 기준 점수: **약 {score:.0f}점 이상**")
+    if gender != "무관":
+        summary_lines.append(f"- 성별: **{gender} 학생 기준**으로 남·여 단성학교를 필터링했습니다.")
+    summary_lines.append("- 1·2지망은 성향과 내신, 학교 선호도 및 상위권 진학 환경을 고려해 배치했습니다.")
+    summary_lines.append("- 3~5지망은 내신 안정성과 통학 여건을 고려한 안전·균형 지망 위주로 구성했습니다.")
+    summary_text = "\n".join(summary_lines)
+
+    return top5, summary_text
+
+
+# ======================================
+# 4. Streamlit UI
+# ======================================
 
 def main():
-    st.set_page_config(page_title="창원 고입 지망 자동 추천기", layout="centered")
-    st.title("창원 고입 지망 자동 추천기")
+    st.set_page_config(page_title="창원 고입 지망 추천기", layout="centered")
+
+    st.title("창원 고입 지망 자동 추천기 (의창·성산권)")
+    st.caption("졸업 중학교, 내신 구간, 성향, 성별, 통학구역을 바탕으로 1지망부터 5지망까지 고등학교를 추천합니다.")
+
+    st.markdown("---")
 
     col1, col2 = st.columns(2)
+
     with col1:
-        name = st.text_input("학생 이름", value="예시학생A")
-        middle_school = st.text_input("중학교 이름", value="창북중")
-        s_type = st.selectbox("성향", ["탐구형", "안정형", "도전형"])
-        gender_sel = st.selectbox("성별", ["선택 안 함", "남", "여"])
+        name = st.text_input("학생 이름", value="예시학생")
+        middle_school = st.selectbox(
+            "졸업(예정) 중학교 선택",
+            options=ALL_MIDDLES,
+            index=ALL_MIDDLES.index("창원중학교") if "창원중학교" in ALL_MIDDLES else 0
+        )
+        score_range = st.selectbox(
+            "내신 평균 점수 구간 선택",
+            [
+                "95 이상",
+                "90 이상",
+                "85 이상",
+                "80 이상",
+                "75 이상",
+                "70 이상",
+                "65 이상",
+                "60 이하"
+            ]
+        )
+
     with col2:
-        score = st.number_input("내신 평균", min_value=0.0, max_value=100.0, value=90.0)
-        zone = st.selectbox("통학구역", ["의창", "성산", "마산", "진해"])
+        track = st.selectbox("학생 성향(계열)", ["인문계열", "자연계열", "혼합형"])
+        gender_sel = st.selectbox("성별", ["선택 안 함", "남", "여"])
+        zone = st.selectbox("통학구역", ["자동 판정", "의창", "성산"])
 
     gender = "무관" if gender_sel == "선택 안 함" else gender_sel
 
-    if st.button("지망 추천 보기"):
-        recs, briefs, profiles, summary = recommend_schools(
-            name, middle_school, s_type, score, zone, gender
+    if st.button("1지망 ~ 5지망 추천 보기"):
+        if not middle_school:
+            st.warning("중학교를 선택해 주세요.")
+            return
+
+        numeric_score = convert_score_range_to_numeric(score_range)
+
+        recs, summary_text = recommend_schools(
+            name=name,
+            middle_school=middle_school,
+            score=numeric_score,
+            track=track,
+            gender=gender,
+            zone=zone,
         )
 
-        st.subheader("추천 결과")
-        for i, (school, b, prof) in enumerate(zip(recs, briefs, profiles), start=1):
-            st.markdown(f"### {i}지망: **{school}**")
-            st.caption(b)
-            for line in prof:
-                st.markdown(f"- {line}")
+        if not recs:
+            st.warning("추천 가능한 학교 조합이 없습니다. 입력값을 다시 확인해 주세요.")
+            return
+
+        st.subheader("추천 결과 요약")
+        st.markdown(summary_text)
+        st.markdown(f"- 선택한 내신 구간: **{score_range}**")
+        st.markdown("---")
+
+        st.subheader("지망별 추천 고등학교 상세 안내")
+
+        for i, school in enumerate(recs, start=1):
+            data = SCHOOL_DATA.get(school, {})
+            st.markdown(f"### {i}지망: **{school}** ({data.get('gender', '')} / {data.get('zone', '')})")
+
+            st.markdown(f"- **학교 특징**: {data.get('feature', '정보 없음')}")
+            st.markdown(f"- **장점**: {data.get('pros', '정보 없음')}")
+            st.markdown(f"- **단점**: {data.get('cons', '정보 없음')}")
+            st.markdown(f"- **고교학점제 운영 특징**: {data.get('credit', '정보 없음')}")
+            st.markdown(f"- **학생부종합(학종) 경쟁력**: {data.get('hakjong', '정보 없음')}")
+            st.markdown(f"- **세특(세부능력·특기사항) 기록 특징**: {data.get('seteuk', '정보 없음')}")
+
             st.markdown("---")
 
-        st.markdown("#### 기준 요약")
-        st.markdown(summary)
+        st.caption("※ 위 추천 결과는 실제 배정 결과를 보장하지 않으며, 학교별 일반적인 경향을 바탕으로 한 상담용 참고 자료입니다.")
 
 
 if __name__ == "__main__":
