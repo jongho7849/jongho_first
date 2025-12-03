@@ -11,32 +11,32 @@ def detect_cluster(middle_school: str) -> str:
 
     ms = middle_school.strip()
 
-    # 북면/동읍권 -> 문성고 중심
-    north_keywords = ["북면", "동읍"]
+    # 북측권: 창북중 / 북면 / 동읍 / 감계
+    north_keywords = ["창북중", "창북", "북면", "동읍", "감계", "감계중"]
     if any(k in ms for k in north_keywords):
         return "north"
 
-    # 마산 핵심권 -> 마산고/마산여고
+    # 마산 핵심권
     masan_keywords = ["양덕", "석전", "합성", "회원", "내서", "월영", "자산", "오동"]
     if any(k in ms for k in masan_keywords):
         return "masan_core"
 
-    # 의창 핵심권 -> 중앙/사파
+    # 의창 핵심권
     uichang_keywords = ["용지", "팔용", "명서", "창원중"]
     if any(k in ms for k in uichang_keywords):
         return "uichang_core"
 
-    # 성산 핵심권 -> 남고/명지여
+    # 성산 핵심권
     seongsan_keywords = ["상남", "사파", "반송", "성주", "용호"]
     if any(k in ms for k in seongsan_keywords):
         return "seongsan_core"
 
-    # 진해 핵심권 (예: 풍호, 여좌, 병암 등)
+    # 진해
     jinhae_keywords = ["풍호", "여좌", "병암", "진해"]
     if any(k in ms for k in jinhae_keywords):
         return "jinhae_core"
 
-    return ""  # 특별 클러스터 없음
+    return ""
 
 
 def base_first_choice(s_type: str, score: float, zone: str) -> str:
@@ -122,54 +122,49 @@ def base_second_choice(s_type: str, score: float, zone: str) -> str:
     return ""
 
 
-def adjust_for_gender(rec_list, gender: str, zone: str):
-    """남/여 선택 시 추천 리스트를 성별에 맞게 재정렬"""
+def adjust_for_gender(rec_list, gender: str):
+    """
+    성별에 따라 추천 목록에서 학교를 '제외'하는 필터
+    - 남: 남학교 + 공학만 유지 (여자고는 제거)
+    - 여: 여자고 + 공학만 유지 (남자고는 제거)
+    """
     if gender == "무관":
         return rec_list[:5]
 
-    boys_only = ["창원남고", "마산고", "진해고"]
+    # 남학교 목록에 '창원중앙고' 포함
+    boys_only = ["창원남고", "마산고", "진해고", "창원중앙고"]
     girls_only = ["명지여고", "창원여고", "마산여고", "진해여고"]
 
-    # 남학생: 여고는 뒤로 밀기
     if gender == "남":
-        kept = [r for r in rec_list if r not in girls_only]
-        girls = [r for r in rec_list if r in girls_only]
-        rec_list = kept + girls
-
-    # 여학생: 남고는 뒤로 밀고, 여고를 앞으로 가져오기
+        filtered = [r for r in rec_list if r not in girls_only]
     elif gender == "여":
-        kept = [r for r in rec_list if r not in boys_only]
-        boys = [r for r in rec_list if r in boys_only]
-        rec_list = kept + boys
+        filtered = [r for r in rec_list if r not in boys_only]
+    else:
+        filtered = rec_list
 
-        # 앞부분에 여고가 전혀 없으면 권역별 대표 여고를 맨 앞에 추가
-        if not any(r in girls_only for r in rec_list[:2]):
-            if zone in ["의창", "성산"]:
-                prefer = "명지여고"
-            elif zone == "마산":
-                prefer = "마산여고"
-            elif zone == "진해":
-                prefer = "진해여고"
-            else:
-                prefer = "창원여고"
+    if not filtered:
+        filtered = rec_list
 
-            if prefer not in rec_list:
-                rec_list.insert(0, prefer)
-            else:
-                # 이미 있다면 맨 앞으로 가져오고 뒤에 있는 건 제거
-                first = True
-                new_list = []
-                for r in [prefer] + rec_list:
-                    if r == prefer:
-                        if first:
-                            new_list.append(r)
-                            first = False
-                    else:
-                        if r not in new_list:
-                            new_list.append(r)
-                rec_list = new_list
+    return filtered[:5]
 
-    return rec_list[:5]
+
+def is_rural_area(address: str, middle_school: str) -> bool:
+    """
+    농어촌 특별전형 자동 판정:
+    - 주소 또는 중학교명에 북면/동읍/대산면/감계/창북중/감계중 등이 포함되면 True
+    """
+    rural_keywords = [
+        "북면", "동읍", "대산면", "대산 읍", "대산면", "대산",
+        "감계", "창북중", "감계중"
+    ]
+
+    text = ""
+    if address:
+        text += address.strip()
+    if middle_school:
+        text += " " + middle_school.strip()
+
+    return any(k in text for k in rural_keywords)
 
 
 # ------------------------------
@@ -178,7 +173,7 @@ def adjust_for_gender(rec_list, gender: str, zone: str):
 
 SCHOOL_PROFILES = {
     "창원중앙고": [
-        "의창구 상위권 일반고로, 내신 경쟁이 비교적 치열한 편입니다.",
+        "의창구 상위권 남자 일반고로, 내신 경쟁이 비교적 치열한 편입니다.",
         "수시·정시를 함께 준비하는 학업 중심 분위기가 강합니다.",
         "팔용·용지·명서권 중학교 학생들의 선호도가 높은 학교입니다.",
     ],
@@ -232,6 +227,16 @@ SCHOOL_PROFILES = {
         "중위권 학생이 여유 있게 학교생활을 유지하면서 진로를 탐색하기에 적합합니다.",
         "상위 지망에서 변수가 발생했을 때를 대비한 ‘보험 지망’ 성격이 강합니다.",
     ],
+    "북면고": [
+        "의창구 북면·동읍·감계 등 북측 권역 학생에게 통학 거리가 가장 유리한 일반고입니다.",
+        "지역 밀착형 학교로, 생활 리듬을 안정적으로 유지하며 내신을 관리하기 좋습니다.",
+        "문성고·창원대산고 등과 함께 북측권 지망 조합에 포함되는 경우가 많습니다.",
+    ],
+    "창원대산고": [
+        "의창구 대산·북면 생활권에 위치한 공학 일반고로, 통학 거리가 가까운 학생에게 유리합니다.",
+        "농어촌 특별전형 대상 지역 학생이 많아, 해당 학생에게 상대적으로 유리한 입시 전략을 설계할 수 있습니다.",
+        "중위권~중상위권 학생의 안정 지망 역할을 할 수 있으며, 북측권 생활권 학생들의 선택 비율이 점차 증가하는 학교입니다.",
+    ],
 }
 
 
@@ -239,7 +244,6 @@ def school_profile(school: str):
     """학교별 주요 특징 리스트 반환"""
     if school in SCHOOL_PROFILES:
         return SCHOOL_PROFILES[school]
-    # 등록하지 않은 학교에 대한 기본 설명
     return [
         "해당 권역에서 통학과 내신 안정성을 고려해 배치한 일반고입니다.",
         "구체적인 정보는 학교 홈페이지 및 교육청 자료를 함께 참고하시는 것이 좋습니다.",
@@ -248,14 +252,18 @@ def school_profile(school: str):
 
 def school_reason_brief(school: str) -> str:
     """한 줄 요약용 짧은 사유"""
-    top_schools = ["창원중앙고", "창원남고", "마산고", "명지여고", "창원여고", "마산여고", "진해고", "진해여고"]
-    balance_schools = ["사파고", "문성고"]
+    top_schools = [
+        "창원중앙고", "창원남고", "마산고",
+        "명지여고", "창원여고", "마산여고",
+        "진해고", "진해여고"
+    ]
+    balance_schools = ["사파고", "문성고", "북면고", "창원대산고"]
     safe_schools = ["신월고"]
 
     if school in top_schools:
         return "지역 상위권 일반고로, 성적과 성장 가능성을 고려한 도전 지망입니다."
     if school in balance_schools:
-        return "내신 관리와 탐구 과목 선택의 균형이 좋아 안정적으로 성적을 유지하기 좋은 학교입니다."
+        return "내신 관리와 통학 여건의 균형이 좋아 안정적으로 성적을 유지하기 좋은 학교입니다."
     if school in safe_schools:
         return "통학과 학업 부담을 고려한 안전 지망으로, 여유 있게 학교 생활을 할 수 있도록 구성했습니다."
     return "해당 권역에서 통학과 내신 안정성을 고려해 배치한 일반고입니다."
@@ -268,10 +276,12 @@ def recommend_schools(
     score: float,
     zone: str,
     gender: str,
+    is_rural: bool,
 ):
     """
     지망 1~5 추천 + 기준 설명
     gender: "무관" / "남" / "여"
+    is_rural: 농어촌 특별전형 대상 여부
     """
 
     cluster = detect_cluster(middle_school)
@@ -283,7 +293,7 @@ def recommend_schools(
 
     # 1지망: 중학교 클러스터 우선 + 기본로직 보완
     if cluster == "north":
-        rec1 = "문성고"
+        rec1 = "북면고"          # 북측권 1지망
     elif cluster == "masan_core":
         rec1 = "마산고"
     elif cluster == "uichang_core":
@@ -297,7 +307,8 @@ def recommend_schools(
 
     # 2지망: 클러스터별 2순위 + 기본로직
     if cluster == "north":
-        rec2 = "창원중앙고"
+        # 북측권: 농특 대상이면 2지망에 창원대산고, 아니면 문성고
+        rec2 = "창원대산고" if is_rural else "문성고"
     elif cluster == "masan_core":
         rec2 = "마산여고"
     elif cluster == "uichang_core":
@@ -311,9 +322,15 @@ def recommend_schools(
 
     # 3,4,5지망: 통학구역 기반 안정 조합
     if zone in ["의창", "성산"]:
-        rec3 = "사파고"
-        rec4 = "문성고"
-        rec5 = "신월고"
+        # 북측권 + 농특 대상이면 3지망에 문성고, 4·5지망 안정 조합
+        if cluster == "north" and is_rural:
+            rec3 = "문성고"
+            rec4 = "사파고"
+            rec5 = "신월고"
+        else:
+            rec3 = "사파고"
+            rec4 = "문성고"
+            rec5 = "신월고"
     elif zone == "마산":
         rec3 = "문성고"
         rec4 = "사파고"
@@ -323,14 +340,21 @@ def recommend_schools(
         rec4 = "진해여고"
         rec5 = "진해고"
 
+    # 북측권이지만 농특 대상이 아닌 경우, 창원대산고를 3지망으로 추가 시도
+    if cluster == "north" and not is_rural:
+        if "창원대산고" not in [rec1, rec2, rec3, rec4, rec5]:
+            rec5 = rec4
+            rec4 = rec3
+            rec3 = "창원대산고"
+
     # 중복 제거
     rec_list = []
     for r in [rec1, rec2, rec3, rec4, rec5]:
         if r and r not in rec_list:
             rec_list.append(r)
 
-    # 남/여 선택 반영
-    rec_list = adjust_for_gender(rec_list, gender, zone)
+    # 성별 필터 적용
+    rec_list = adjust_for_gender(rec_list, gender)
 
     # 학교별 간단 사유 및 상세 특징 생성
     brief_reasons = [school_reason_brief(s) for s in rec_list]
@@ -338,7 +362,7 @@ def recommend_schools(
 
     # 요약 기준 설명
     cluster_map = {
-        "north": "북면·동읍 북측 권역",
+        "north": "북면·동읍·감계·창북중 등 북측 권역",
         "masan_core": "마산(양덕·석전·합성·회원·내서 등) 핵심권",
         "uichang_core": "의창(용지·팔용·명서·창원중 인근) 핵심권",
         "seongsan_core": "성산(상남·사파·반송·성주·용호 인근) 핵심권",
@@ -351,8 +375,11 @@ def recommend_schools(
     summary_lines.append(f"- 중학교: **{middle_school}** (권역: {cluster_desc})")
     summary_lines.append(f"- 통학구역: **{zone}**, 성향: **{s_type}**, 내신: **{score:.1f}점**")
     if gender != "무관":
-        summary_lines.append(f"- 성별: **{gender} 학생 기준**으로 남녀고/여고를 우선 반영했습니다.")
-    summary_lines.append("- 1·2지망은 중학교 권역과 성향·내신을 반영해 상위/도전 학교 위주로 구성했습니다.")
+        summary_lines.append(f"- 성별: **{gender} 학생 기준**으로 남·여 전용 학교를 필터링했습니다.")
+    summary_lines.append(f"- 농어촌 특별전형 자동 판정: **{'대상' if is_rural else '비대상(도시지역)'}**입니다.")
+    if is_rural:
+        summary_lines.append("- 농어촌 특별전형 대상 학생으로, 창원대산고 등 북측권 학교 지망에 이를 반영했습니다.")
+    summary_lines.append("- 1·2지망은 중학교 권역과 성향·내신을 반영해 상위/도전 또는 지역 대표 학교 위주로 구성했습니다.")
     summary_lines.append("- 3~5지망은 통학거리와 내신 안정성을 고려한 안전 지망 위주로 배치했습니다.")
 
     summary_text = "\n".join(summary_lines)
@@ -365,7 +392,6 @@ def recommend_schools(
 # ==============================
 
 def main():
-    # 🔹 여기 학원 이름 바꾸기
     ACADEMY_NAME = "○○영어수학학원 (창원 고입컨설팅)"
 
     st.set_page_config(page_title="창원 고입 지망 자동 추천기", layout="centered")
@@ -373,7 +399,10 @@ def main():
     st.title("창원 고입 지망 자동 추천기")
     st.markdown(f"#### {ACADEMY_NAME}")
 
-    st.write("중학교, 성향, 내신, 통학구역, 성별(선택)을 입력하면, 창원·마산·진해 실제 진학 흐름을 반영하여 지망 1~5를 자동으로 추천합니다.")
+    st.write(
+        "중학교, 성향, 내신, 통학구역, 성별(선택), 학생 주소를 입력하면,\n"
+        "창원·마산·진해 실제 진학 흐름과 농어촌 특별전형 자동 판정을 반영하여 지망 1~5를 추천합니다."
+    )
     st.caption("※ 본 결과는 참고용이며, 최종 배정은 경남교육청 고입 배정 기준과 해당 연도 경쟁 상황에 따라 달라질 수 있습니다.")
 
     st.markdown("---")
@@ -381,14 +410,18 @@ def main():
     col1, col2 = st.columns(2)
     with col1:
         name = st.text_input("학생 이름", value="예시학생A")
-        middle_school = st.text_input("중학교 이름", value="용지중")
+        middle_school = st.text_input("중학교 이름", value="창북중")
         s_type = st.selectbox("성향 선택", ["탐구형", "안정형", "도전형"])
         gender_sel = st.selectbox("성별 선택 (선택 사항)", ["선택 안 함", "남", "여"])
     with col2:
         score = st.number_input("내신 평균 점수 (예: 87)", min_value=0.0, max_value=100.0, value=93.0, step=0.5)
         zone = st.selectbox("통학구역", ["의창", "성산", "마산", "진해"])
+        address = st.text_input("학생 주소(동/읍/면까지만 입력해도 됩니다)", value="의창구 북면 감계")
 
     gender = "무관" if gender_sel == "선택 안 함" else gender_sel
+
+    # 주소 + 중학교 기반 농특 자동 판정
+    is_rural = is_rural_area(address, middle_school)
 
     if st.button("지망 1~5 추천 보기"):
         recs, brief_reasons, profiles, summary_text = recommend_schools(
@@ -398,6 +431,7 @@ def main():
             score,
             zone,
             gender,
+            is_rural,
         )
 
         if not recs:
@@ -407,14 +441,14 @@ def main():
 
             for i, (school, brief, prof_lines) in enumerate(zip(recs, brief_reasons, profiles), start=1):
                 st.write(f"**{i}지망: {school}**")
-                st.caption(brief)  # 한 줄 요약
+                st.caption(brief)
                 for line in prof_lines:
                     st.markdown(f"- {line}")
                 st.markdown("---")
 
             st.markdown("#### 추천 기준 요약")
             st.markdown(summary_text)
-            st.caption("※ 학교 특징은 일반적인 경향을 정리한 것으로, 구체적인 정보는 각 학교 홈페이지와 교육청 자료를 함께 참고하시는 것이 좋습니다.")
+            st.caption("※ 학교 특징은 일반적인 경향을 정리한 것으로, 구체적인 정보는 각 학교 홈페이지 및 교육청 자료를 함께 참고하시는 것이 좋습니다.")
 
 
 if __name__ == "__main__":
