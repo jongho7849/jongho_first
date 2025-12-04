@@ -723,7 +723,7 @@ def main():
             # 기본 정보
             st.markdown(f"- **학교 특징**: {data.get('feature', '정보 없음')}")
             st.markdown(f"- **장점**: {data.get('pros', '정보 없음')}")
-            st.markmarkdown(f"- **단점**: {data.get('cons', '정보 없음')}")
+            st.markdown(f"- **단점**: {data.get('cons', '정보 없음')}")
             st.markdown(f"- **고교학점제 운영 특징**: {data.get('credit', '정보 없음')}")
             st.markdown(f"- **학생부종합(학종) 준비 특징**: {data.get('hakjong', '정보 없음')}")
             st.markdown(f"- **세특(세부능력·특기사항) 기록 특징**: {data.get('seteuk', '정보 없음')}")
@@ -742,3 +742,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
