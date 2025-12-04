@@ -624,9 +624,33 @@ def recommend_schools(name: str,
         # 90 이상: 상위권 → 상위 학교 유지
         final_list = filtered
 
+            # 4-1) 감계중·창북중 학생의 북면고 위치 조정 (통학거리 반영)
+    special_middles = {"창북중학교", "감계중학교"}
+    if middle_school in special_middles and "북면고등학교" in final_list:
+        # 먼저 기존 리스트에서 북면고를 제거
+        final_list = [s for s in final_list if s != "북면고등학교"]
+
+        # 내신 점수에 따른 삽입 위치 결정
+        if score >= 90:
+            insert_index = 2   # 3지망 근처
+        elif score >= 80:
+            insert_index = 1   # 2지망 근처
+        elif score < 70:
+            insert_index = 0   # 1지망 근처
+        else:  # 70 ~ 79점 구간
+            insert_index = 1   # 2지망 근처로 처리
+
+        # 리스트 길이보다 인덱스가 크지 않도록 보정
+        if insert_index > len(final_list):
+            insert_index = len(final_list)
+
+        # 결정된 위치에 북면고 재삽입
+        final_list.insert(insert_index, "북면고등학교")
+
     # 최종 5개 추천
     top5 = []
     for s in final_list:
+
         if s not in top5 and s in SCHOOL_DATA:
             top5.append(s)
         if len(top5) == 5:
@@ -742,4 +766,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
